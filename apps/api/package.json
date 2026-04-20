@@ -6,6 +6,8 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "node dist/main.js"
   },
   "dependencies": {
@@ -20,6 +22,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.7.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   }
 }
