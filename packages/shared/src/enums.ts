@@ -41,4 +41,6 @@ export enum MessageType {
   BuzzerClosed = "buzzer_closed",
   BuzzesReported = "buzzes_reported",
   Error = "error",
+  Ping = "ping",
+  Pong = "pong",
 }

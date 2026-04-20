@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PlayerId, Room } from "@buzzer/shared";
 import { useAudio } from "../hooks/useAudioSettings";
+import { serverNow } from "../hooks/useClockSync";
 import { useRoomStore } from "../hooks/useRoomStore";
 import { BuzzesList } from "./BuzzesList";
 
@@ -22,7 +23,7 @@ export const ContestantView = ({ room, you }: Props) => {
       setBuzzerLive(false);
       return;
     }
-    const delay = (buzzer.openAt ?? Date.now()) - Date.now();
+    const delay = (buzzer.openAt ?? serverNow()) - serverNow();
     if (delay <= 0) {
       setBuzzerLive(true);
       return;

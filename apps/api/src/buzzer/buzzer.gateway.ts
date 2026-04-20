@@ -113,6 +113,13 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
         case MessageType.EndQuestion:
           this.handleEndQuestion(client);
           return;
+        case MessageType.Ping:
+          this.sendTo(client, {
+            type: MessageType.Pong,
+            clientTime: msg.clientTime,
+            serverTime: Date.now(),
+          });
+          return;
       }
     } catch (err) {
       if (err instanceof BuzzerError) {

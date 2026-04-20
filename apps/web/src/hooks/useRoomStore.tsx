@@ -20,6 +20,7 @@ import {
 import { getClientToken } from "../lib/clientToken";
 import { storage } from "../lib/storage";
 import { useAudio } from "./useAudioSettings";
+import { useClockSync, serverNow } from "./useClockSync";
 import { useServerMessages, useSocket } from "./useSocket";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -59,6 +60,7 @@ const findName = (room: Room | null, id: PlayerId): string =>
 
 export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
   const { socket, status } = useSocket();
+  useClockSync();
   const { playOpen, playCorrect, playIncorrect, speakName } = useAudio();
   const [room, setRoom] = useState<Room | null>(null);
   const [you, setYou] = useState<PlayerId | null>(null);
@@ -280,7 +282,7 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
   const buzz = useCallback(() => {
     const qid = room?.buzzer.questionId;
     if (!qid || !room?.buzzer.open) return;
-    socket.send({ type: MessageType.Buzz, questionId: qid, buzzedAt: Date.now() });
+    socket.send({ type: MessageType.Buzz, questionId: qid, buzzedAt: serverNow() });
   }, [socket, room]);
 
   const markCorrect = useCallback(

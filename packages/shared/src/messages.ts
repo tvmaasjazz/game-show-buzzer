@@ -60,6 +60,11 @@ export interface EndQuestionMessage {
   type: MessageType.EndQuestion;
 }
 
+export interface PingMessage {
+  type: MessageType.Ping;
+  clientTime: number;
+}
+
 export type ClientMessage =
   | CreateRoomMessage
   | JoinRoomMessage
@@ -70,7 +75,8 @@ export type ClientMessage =
   | BuzzMessage
   | MarkCorrectMessage
   | MarkIncorrectMessage
-  | EndQuestionMessage;
+  | EndQuestionMessage
+  | PingMessage;
 
 // --- Server -> Client ---
 
@@ -140,6 +146,12 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface PongMessage {
+  type: MessageType.Pong;
+  clientTime: number;
+  serverTime: number;
+}
+
 export type ServerMessage =
   | RoomStateMessage
   | PlayerJoinedMessage
@@ -151,4 +163,5 @@ export type ServerMessage =
   | BuzzerOpenedMessage
   | BuzzerClosedMessage
   | BuzzesReportedMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | PongMessage;
