@@ -49,11 +49,13 @@ export class PresenceService {
   }
 
   /**
-   * Called when a player is permanently removed (explicit Leave).
-   * Clears any timers held by that player.
+   * Called when a player is permanently removed (explicit Leave). Must run
+   * BEFORE the player is removed from the room so role promotion can pick an
+   * oldest-other from the still-intact roster.
    */
-  onPlayerRemoved(_roomCode: RoomCode, playerId: PlayerId): void {
+  onPlayerRemoved(roomCode: RoomCode, playerId: PlayerId): void {
     this.clearRoleTimer(playerId);
+    this.reassignRoles(roomCode, playerId);
   }
 
   shutdown(): void {
@@ -89,15 +91,20 @@ export class PresenceService {
     if (!room) return;
     const player = room.players.find((p) => p.id === playerId);
     if (player?.connected) return; // they came back between scheduling and firing
+    this.reassignRoles(roomCode, playerId);
+  }
+
+  private reassignRoles(roomCode: RoomCode, departingId: PlayerId): void {
+    const room = this.store.getRoom(roomCode);
+    if (!room) return;
 
     // Admin promotion first — it may cascade the questioner role.
-    if (room.adminId === playerId) {
-      const next = this.oldestOther(room, playerId);
+    if (room.adminId === departingId) {
+      const next = this.oldestOther(room, departingId);
       if (next) {
         this.store.setAdmin(roomCode, next.id);
         this.events.emit("admin_changed", { roomCode, adminId: next.id });
-        // Cascade: if this player was also the questioner, new admin takes questioner by default.
-        if (room.questionerId === playerId) {
+        if (room.questionerId === departingId) {
           this.store.setQuestioner(roomCode, next.id);
           this.events.emit("questioner_changed", {
             roomCode,
@@ -107,7 +114,7 @@ export class PresenceService {
       } else {
         this.logger.warn(`no eligible player to promote admin in room ${roomCode}`);
       }
-    } else if (room.questionerId === playerId) {
+    } else if (room.questionerId === departingId) {
       // Questioner alone — admin inherits the role.
       this.store.setQuestioner(roomCode, room.adminId);
       this.events.emit("questioner_changed", {

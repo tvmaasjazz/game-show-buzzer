@@ -7,6 +7,7 @@ export interface Player {
   name: string;
   connected: boolean;
   joinedAt: number;
+  score?: number;
 }
 
 // BuzzerState state machine:
@@ -21,11 +22,28 @@ export interface Player {
 //   |
 //   +-- any CLOSED_* stays here until next buzzer_open; `winner` persists
 //       so reconnecting clients can show the last-winner overlay.
+export interface BuzzRecord {
+  playerId: PlayerId;
+  // 0 for the winner; positive milliseconds for late arrivals.
+  deltaMs: number;
+}
+
 export interface BuzzerState {
   open: boolean;
   questionId?: string;
   openedAt?: number;
+  // When clients should enable the buzz button (server clock, ms).
+  openAt?: number;
   winner?: PlayerId;
+  // Server timestamp when the winning buzz was received. Internal; clients
+  // don't need to read this, but it's included for reconnect state.
+  winnerAt?: number;
+  // All buzzes accepted for this question, sorted ascending by deltaMs.
+  // Populated progressively; clients see the full set via BuzzesReported.
+  buzzes?: BuzzRecord[];
+  // Players the questioner has judged Incorrect this session. They can't buzz
+  // on subsequent re-opens until the session ends (Correct/Ended/fresh Open).
+  excludedPlayerIds?: PlayerId[];
 }
 
 export interface Room {
@@ -35,4 +53,5 @@ export interface Room {
   players: Player[];
   buzzer: BuzzerState;
   createdAt: number;
+  questionNumber: number;
 }

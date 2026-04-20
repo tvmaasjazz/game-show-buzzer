@@ -38,111 +38,74 @@ describe("InMemoryRoomStore", () => {
     });
   });
 
-  describe("tryRegisterBuzz — atomic invariant", () => {
-    it("returns winner for the first caller and null for every subsequent caller", () => {
+  describe("acceptBuzz", () => {
+    it("returns true for a valid buzz", () => {
       const room = store.createRoom({ id: "admin", name: "Admin" });
-      // Add some contestants
-      for (let i = 0; i < 5; i++) {
-        store.addPlayer(room.code, {
-          id: `p${i}`,
-          name: `P${i}`,
-          connected: true,
-          joinedAt: Date.now(),
-        });
-      }
-      const opened = store.openBuzzer(room.code);
-      expect(opened).not.toBeNull();
-      const questionId = opened!.questionId;
-
-      // First press wins.
-      const winResult = store.tryRegisterBuzz(room.code, "p0", questionId);
-      expect(winResult).toEqual({ winner: "p0" });
-
-      // Every subsequent call with valid params returns null.
-      for (let i = 1; i < 5; i++) {
-        const r = store.tryRegisterBuzz(room.code, `p${i}`, questionId);
-        expect(r).toBeNull();
-      }
-
-      // Room state reflects the winner.
-      const afterRoom = store.getRoom(room.code)!;
-      expect(afterRoom.buzzer.open).toBe(false);
-      expect(afterRoom.buzzer.winner).toBe("p0");
-    });
-
-    it("returns null when buzzer is closed", () => {
-      const room = store.createRoom({ id: "a", name: "A" });
-      // Buzzer is closed by default.
-      const r = store.tryRegisterBuzz(room.code, "a", "any");
-      expect(r).toBeNull();
-    });
-
-    it("returns null when questionId is stale", () => {
-      const room = store.createRoom({ id: "a", name: "A" });
-      const opened = store.openBuzzer(room.code);
-      expect(opened).not.toBeNull();
-      const r = store.tryRegisterBuzz(room.code, "a", "WRONG_QID");
-      expect(r).toBeNull();
-    });
-
-    it("returns null when winner is already set (double-safety)", () => {
-      const room = store.createRoom({ id: "a", name: "A" });
+      store.addPlayer(room.code, { id: "p1", name: "P1", connected: true, joinedAt: 0 });
       const opened = store.openBuzzer(room.code)!;
-      const first = store.tryRegisterBuzz(room.code, "a", opened.questionId);
-      expect(first).toEqual({ winner: "a" });
-      // Another call with same questionId should be null (buzzer is closed AND winner is set).
-      const second = store.tryRegisterBuzz(room.code, "a", opened.questionId);
-      expect(second).toBeNull();
+      expect(store.acceptBuzz(room.code, "p1", opened.questionId)).toBe(true);
+    });
+
+    it("returns false when buzzer is closed", () => {
+      const room = store.createRoom({ id: "a", name: "A" });
+      expect(store.acceptBuzz(room.code, "a", "any")).toBe(false);
+    });
+
+    it("returns false for a stale questionId", () => {
+      const room = store.createRoom({ id: "a", name: "A" });
+      store.openBuzzer(room.code);
+      expect(store.acceptBuzz(room.code, "a", "WRONG_QID")).toBe(false);
+    });
+
+    it("returns false for an excluded player", () => {
+      const room = store.createRoom({ id: "q", name: "Q" });
+      store.addPlayer(room.code, { id: "p1", name: "P1", connected: true, joinedAt: 0 });
+      const opened = store.openBuzzer(room.code)!;
+      // Simulate p1 having been marked incorrect previously
+      store.markIncorrect(room.code); // needs winner first
+      // Just test directly via finalizeWinner then markIncorrect
+      const buzzes = [{ playerId: "p1", deltaMs: 0 }];
+      store.finalizeWinner(room.code, opened.questionId, "p1", buzzes);
+      const inc = store.markIncorrect(room.code)!;
+      expect(store.acceptBuzz(room.code, "p1", inc.questionId)).toBe(false);
     });
   });
 
-  describe("tryRegisterBuzz — concurrency stress", () => {
-    // Node's event loop is single-threaded: this test simulates N "simultaneous"
-    // buzz arrivals by invoking tryRegisterBuzz N times in a tight loop (sync),
-    // which is exactly how they'd be processed if N Socket.IO events fired on the
-    // same tick. Exactly one caller must win.
-    it("exactly one winner across 1000 parallel buzz attempts", () => {
+  describe("finalizeWinner", () => {
+    it("sets winner state and buzzes", () => {
       const room = store.createRoom({ id: "q", name: "Q" });
-      const playerIds: string[] = [];
-      for (let i = 0; i < 1000; i++) {
-        const id = `p${i}`;
-        playerIds.push(id);
-        store.addPlayer(room.code, {
-          id,
-          name: id,
-          connected: true,
-          joinedAt: Date.now(),
-        });
-      }
+      store.addPlayer(room.code, { id: "p1", name: "P1", connected: true, joinedAt: 0 });
+      store.addPlayer(room.code, { id: "p2", name: "P2", connected: true, joinedAt: 0 });
       const opened = store.openBuzzer(room.code)!;
-      const results = playerIds.map((pid) =>
-        store.tryRegisterBuzz(room.code, pid, opened.questionId),
-      );
-      const winners = results.filter((r) => r !== null);
-      expect(winners).toHaveLength(1);
-      expect(winners[0]).toHaveProperty("winner");
+      const buzzes = [{ playerId: "p1", deltaMs: 0 }, { playerId: "p2", deltaMs: 15 }];
+      const ok = store.finalizeWinner(room.code, opened.questionId, "p1", buzzes);
+      expect(ok).toBe(true);
+      const after = store.getRoom(room.code)!;
+      expect(after.buzzer.open).toBe(false);
+      expect(after.buzzer.winner).toBe("p1");
+      expect(after.buzzer.buzzes).toEqual(buzzes);
     });
 
-    it("exactly one winner when invoked via Promise.all (async interleaving)", async () => {
+    it("returns false when questionId has changed (stale window)", () => {
       const room = store.createRoom({ id: "q", name: "Q" });
-      for (let i = 0; i < 50; i++) {
-        store.addPlayer(room.code, {
-          id: `p${i}`,
-          name: `P${i}`,
-          connected: true,
-          joinedAt: Date.now(),
-        });
-      }
       const opened = store.openBuzzer(room.code)!;
-      const results = await Promise.all(
-        Array.from({ length: 50 }, (_, i) =>
-          Promise.resolve().then(() =>
-            store.tryRegisterBuzz(room.code, `p${i}`, opened.questionId),
-          ),
-        ),
-      );
-      const winners = results.filter((r): r is { winner: string } => r !== null);
-      expect(winners).toHaveLength(1);
+      // Questioner closes and reopens — new questionId
+      store.closeBuzzer(room.code, BuzzerCloseReason.Manual);
+      store.openBuzzer(room.code);
+      const ok = store.finalizeWinner(room.code, opened.questionId, "q", []);
+      expect(ok).toBe(false);
+    });
+
+    it("preserves excludedPlayerIds from prior incorrect rounds", () => {
+      const room = store.createRoom({ id: "q", name: "Q" });
+      store.addPlayer(room.code, { id: "p1", name: "P1", connected: true, joinedAt: 0 });
+      store.addPlayer(room.code, { id: "p2", name: "P2", connected: true, joinedAt: 0 });
+      const opened = store.openBuzzer(room.code)!;
+      store.finalizeWinner(room.code, opened.questionId, "p1", [{ playerId: "p1", deltaMs: 0 }]);
+      const inc = store.markIncorrect(room.code)!;
+      store.finalizeWinner(room.code, inc.questionId, "p2", [{ playerId: "p2", deltaMs: 0 }]);
+      const after = store.getRoom(room.code)!;
+      expect(after.buzzer.excludedPlayerIds).toContain("p1");
     });
   });
 
@@ -155,23 +118,21 @@ describe("InMemoryRoomStore", () => {
       expect(first.questionId).not.toBe(second.questionId);
     });
 
-    it("closeBuzzer preserves existing winner", () => {
+    it("closeBuzzer resets buzzer and increments questionNumber", () => {
       const room = store.createRoom({ id: "a", name: "A" });
-      const opened = store.openBuzzer(room.code)!;
-      store.tryRegisterBuzz(room.code, "a", opened.questionId);
-      const afterWin = store.getRoom(room.code)!;
-      expect(afterWin.buzzer.winner).toBe("a");
-      // closeBuzzer (e.g., on questioner drop) shouldn't wipe the winner.
+      const qnBefore = room.questionNumber;
+      store.openBuzzer(room.code);
       store.closeBuzzer(room.code, BuzzerCloseReason.QuestionerLeft);
       const after = store.getRoom(room.code)!;
       expect(after.buzzer.open).toBe(false);
-      expect(after.buzzer.winner).toBe("a");
+      expect(after.buzzer.winner).toBeUndefined();
+      expect(after.questionNumber).toBe(qnBefore + 1);
     });
 
     it("openBuzzer on next round clears the previous winner", () => {
       const room = store.createRoom({ id: "a", name: "A" });
       const first = store.openBuzzer(room.code)!;
-      store.tryRegisterBuzz(room.code, "a", first.questionId);
+      store.finalizeWinner(room.code, first.questionId, "a", [{ playerId: "a", deltaMs: 0 }]);
       expect(store.getRoom(room.code)!.buzzer.winner).toBe("a");
       store.openBuzzer(room.code);
       expect(store.getRoom(room.code)!.buzzer.winner).toBeUndefined();

@@ -1,4 +1,11 @@
-import type { Player, PlayerId, Room, RoomCode, ClientToken } from "./models";
+import type {
+  BuzzRecord,
+  Player,
+  PlayerId,
+  Room,
+  RoomCode,
+  ClientToken,
+} from "./models";
 import type { BuzzerCloseReason, ErrorCode } from "./enums";
 import { MessageType } from "./enums";
 
@@ -37,6 +44,20 @@ export interface BuzzerCloseMessage {
 export interface BuzzMessage {
   type: MessageType.Buzz;
   questionId: string;
+  buzzedAt: number;
+}
+
+export interface MarkCorrectMessage {
+  type: MessageType.MarkCorrect;
+  points?: number;
+}
+
+export interface MarkIncorrectMessage {
+  type: MessageType.MarkIncorrect;
+}
+
+export interface EndQuestionMessage {
+  type: MessageType.EndQuestion;
 }
 
 export type ClientMessage =
@@ -46,7 +67,10 @@ export type ClientMessage =
   | ChangeQuestionerMessage
   | BuzzerOpenMessage
   | BuzzerCloseMessage
-  | BuzzMessage;
+  | BuzzMessage
+  | MarkCorrectMessage
+  | MarkIncorrectMessage
+  | EndQuestionMessage;
 
 // --- Server -> Client ---
 
@@ -90,12 +114,24 @@ export interface BuzzerOpenedMessage {
   type: MessageType.BuzzerOpened;
   questionId: string;
   openedAt: number;
+  // Absolute server timestamp when clients should enable their buzz button.
+  openAt: number;
+  excludedPlayerIds?: PlayerId[];
 }
 
 export interface BuzzerClosedMessage {
   type: MessageType.BuzzerClosed;
   reason: BuzzerCloseReason;
   winner?: PlayerId;
+  scores?: Record<PlayerId, number>;
+  // Next questionNumber, sent on every close that ends the question session.
+  // Omitted for Incorrect (same question continues).
+  questionNumber?: number;
+}
+
+export interface BuzzesReportedMessage {
+  type: MessageType.BuzzesReported;
+  buzzes: BuzzRecord[];
 }
 
 export interface ErrorMessage {
@@ -114,4 +150,5 @@ export type ServerMessage =
   | QuestionerChangedMessage
   | BuzzerOpenedMessage
   | BuzzerClosedMessage
+  | BuzzesReportedMessage
   | ErrorMessage;

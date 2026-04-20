@@ -1,8 +1,15 @@
-import { MessageType } from "@buzzer/shared";
+import { Route, Routes } from "react-router-dom";
+import { HomePage } from "./pages/HomePage";
+import { CreatePage } from "./pages/CreatePage";
+import { JoinPage } from "./pages/JoinPage";
+import { RoomPage } from "./pages/RoomPage";
 
 export const App = () => (
-  <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-    <h1>Buzzer</h1>
-    <p>Shared contract loaded. Example: MessageType.Buzz = "{MessageType.Buzz}"</p>
-  </div>
+  <Routes>
+    <Route path="/" element={<HomePage />} />
+    <Route path="/create" element={<CreatePage />} />
+    <Route path="/join" element={<JoinPage />} />
+    <Route path="/room/:code" element={<RoomPage />} />
+    <Route path="*" element={<HomePage />} />
+  </Routes>
 );

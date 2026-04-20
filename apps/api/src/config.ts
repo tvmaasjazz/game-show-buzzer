@@ -9,4 +9,10 @@ export const AppConfig = {
   roomCodeLength: 4,
   roomCodeCharset: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
   roomCodeMaxRetries: 5,
+  // How long after the first buzz the server waits before declaring a winner.
+  // Override with BUZZ_WINDOW_MS env var.
+  buzzWindowMs: parseInt(process.env.BUZZ_WINDOW_MS ?? "200", 10),
+  // How far in the future (ms) the server schedules the buzzer open so all
+  // clients enable their buttons simultaneously. Override with OPEN_DELAY_MS.
+  openDelayMs: parseInt(process.env.OPEN_DELAY_MS ?? "200", 10),
 } as const;

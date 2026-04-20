@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full bg-black text-white;
+  }
+  body {
+    @apply font-sans antialiased;
+    font-weight: 500;
+  }
+  h1,
+  h2,
+  h3,
+  button {
+    font-weight: 700;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-green-500 ring-offset-2 ring-offset-black;
+  }
+}
+
+@layer utilities {
+  .transition-standard {
+    transition: all 200ms ease-out;
+  }
+}

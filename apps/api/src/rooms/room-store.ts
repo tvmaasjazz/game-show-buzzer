@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import type {
+  BuzzRecord,
   ClientToken,
   Player,
   PlayerId,
@@ -9,6 +10,7 @@ import type {
 } from "@buzzer/shared";
 import { BuzzerCloseReason } from "@buzzer/shared";
 import { AppConfig } from "../config";
+
 
 export interface RoomStore {
   createRoom(admin: Pick<Player, "id" | "name">): Room;
@@ -25,13 +27,32 @@ export interface RoomStore {
   setBinding(code: RoomCode, clientToken: ClientToken, playerId: PlayerId): void;
 
   // Buzzer atomic ops.
-  openBuzzer(code: RoomCode): { questionId: string; openedAt: number } | null;
+  openBuzzer(code: RoomCode): {
+    questionId: string;
+    openedAt: number;
+    excludedPlayerIds: PlayerId[];
+  } | null;
   closeBuzzer(code: RoomCode, _reason: BuzzerCloseReason): void;
-  tryRegisterBuzz(
+  // Returns true if the buzz is valid (buzzer open, correct questionId, not excluded).
+  // Does not mutate winner state — call finalizeWinner after the collection window.
+  acceptBuzz(code: RoomCode, playerId: PlayerId, questionId: string): boolean;
+  // Commits winner + buzzes to the store after the collection window closes.
+  // Returns false if the question has already changed (window was cancelled).
+  finalizeWinner(
     code: RoomCode,
-    playerId: PlayerId,
     questionId: string,
-  ): { winner: PlayerId } | null;
+    winnerId: PlayerId,
+    buzzes: BuzzRecord[],
+  ): boolean;
+
+  markCorrect(code: RoomCode, points: number): { winner: PlayerId; scores: Record<PlayerId, number>; questionNumber: number } | null;
+  markIncorrect(code: RoomCode): {
+    prevWinner: PlayerId;
+    questionId: string;
+    openedAt: number;
+    excludedPlayerIds: PlayerId[];
+  } | null;
+  endQuestion(code: RoomCode): number;
 
   // Role mutations.
   setAdmin(code: RoomCode, playerId: PlayerId): void;
@@ -59,6 +80,7 @@ export class InMemoryRoomStore implements RoomStore {
       name: admin.name,
       connected: true,
       joinedAt: now,
+      score: 0,
     };
     const room: Room = {
       code,
@@ -67,6 +89,7 @@ export class InMemoryRoomStore implements RoomStore {
       players: [adminPlayer],
       buzzer: { open: false },
       createdAt: now,
+      questionNumber: 1,
     };
     this.rooms.set(code, room);
     this.bindings.set(code, new Map());
@@ -120,47 +143,123 @@ export class InMemoryRoomStore implements RoomStore {
     roomBindings.set(clientToken, playerId);
   }
 
-  openBuzzer(code: RoomCode): { questionId: string; openedAt: number } | null {
+  openBuzzer(
+    code: RoomCode,
+  ): {
+    questionId: string;
+    openedAt: number;
+    excludedPlayerIds: PlayerId[];
+  } | null {
     const room = this.rooms.get(code);
     if (!room) return null;
     const questionId = randomUUID();
     const openedAt = Date.now();
-    room.buzzer = { open: true, questionId, openedAt, winner: undefined };
-    return { questionId, openedAt };
+    // Fresh OPEN — everything reset. questionNumber already reflects current question.
+    room.buzzer = {
+      open: true,
+      questionId,
+      openedAt,
+      winner: undefined,
+      winnerAt: undefined,
+      buzzes: [],
+      excludedPlayerIds: [],
+    };
+    return { questionId, openedAt, excludedPlayerIds: [] };
   }
 
   closeBuzzer(code: RoomCode, _reason: BuzzerCloseReason): void {
     const room = this.rooms.get(code);
     if (!room) return;
-    // Preserve `winner` if set (Winner reason); clear questionId/openedAt.
-    const existingWinner = room.buzzer.winner;
-    room.buzzer = {
-      open: false,
-      winner: existingWinner,
-    };
+    room.buzzer = { open: false };
+    room.questionNumber += 1;
   }
 
-  // Atomic under Node's single-threaded event loop: this entire method runs
-  // start-to-finish without any other async interleaving. See design doc
-  // "Buzz Race-Condition Handling" + EUREKA log.
-  tryRegisterBuzz(
-    code: RoomCode,
-    playerId: PlayerId,
-    questionId: string,
-  ): { winner: PlayerId } | null {
+  markCorrect(code: RoomCode, points: number): { winner: PlayerId; scores: Record<PlayerId, number>; questionNumber: number } | null {
     const room = this.rooms.get(code);
     if (!room) return null;
     const b = room.buzzer;
-    if (!b.open) return null;
-    if (b.questionId !== questionId) return null;
-    if (b.winner !== undefined) return null;
+    if (b.open) return null;
+    if (!b.winner) return null;
+    const winner = b.winner;
+    const winnerPlayer = room.players.find((p) => p.id === winner);
+    if (winnerPlayer) winnerPlayer.score = (winnerPlayer.score ?? 0) + points;
+    room.buzzer = { open: false };
+    room.questionNumber += 1;
+    const scores: Record<PlayerId, number> = Object.fromEntries(
+      room.players.map((p) => [p.id, p.score ?? 0]),
+    );
+    return { winner, scores, questionNumber: room.questionNumber };
+  }
+
+  markIncorrect(code: RoomCode): {
+    prevWinner: PlayerId;
+    questionId: string;
+    openedAt: number;
+    excludedPlayerIds: PlayerId[];
+  } | null {
+    const room = this.rooms.get(code);
+    if (!room) return null;
+    const b = room.buzzer;
+    if (b.open) return null;
+    if (!b.winner) return null;
+    const prevWinner = b.winner;
+    const excludedPlayerIds = [
+      ...(b.excludedPlayerIds ?? []),
+      prevWinner,
+    ];
+    const questionId = randomUUID();
+    const openedAt = Date.now();
+    room.buzzer = {
+      open: true,
+      questionId,
+      openedAt,
+      winner: undefined,
+      winnerAt: undefined,
+      buzzes: [],
+      excludedPlayerIds,
+    };
+    return { prevWinner, questionId, openedAt, excludedPlayerIds };
+  }
+
+  endQuestion(code: RoomCode): number {
+    const room = this.rooms.get(code);
+    if (!room) return 0;
+    room.buzzer = { open: false };
+    room.questionNumber += 1;
+    return room.questionNumber;
+  }
+
+  acceptBuzz(code: RoomCode, playerId: PlayerId, questionId: string): boolean {
+    const room = this.rooms.get(code);
+    if (!room) return false;
+    const b = room.buzzer;
+    if (!b.open) return false;
+    if (b.questionId !== questionId) return false;
+    if (b.excludedPlayerIds?.includes(playerId)) return false;
+    return true;
+  }
+
+  finalizeWinner(
+    code: RoomCode,
+    questionId: string,
+    winnerId: PlayerId,
+    buzzes: BuzzRecord[],
+  ): boolean {
+    const room = this.rooms.get(code);
+    if (!room) return false;
+    const b = room.buzzer;
+    // Guard: question may have changed if questioner acted during the window.
+    if (b.questionId !== questionId) return false;
     room.buzzer = {
       open: false,
       questionId: b.questionId,
       openedAt: b.openedAt,
-      winner: playerId,
+      winner: winnerId,
+      winnerAt: Date.now(),
+      buzzes,
+      excludedPlayerIds: b.excludedPlayerIds,
     };
-    return { winner: playerId };
+    return true;
   }
 
   setAdmin(code: RoomCode, playerId: PlayerId): void {

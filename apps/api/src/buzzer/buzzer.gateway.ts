@@ -18,7 +18,9 @@ import {
   isQuestioner,
 } from "@buzzer/shared";
 import type {
+  BuzzRecord,
   ClientMessage,
+  PlayerId,
   ServerMessage,
   RoomCode,
 } from "@buzzer/shared";
@@ -31,12 +33,19 @@ import { BuzzerError } from "../rooms/buzzer-error";
 
 const WS_EVENT = "message" as const;
 
+interface BuzzWindow {
+  questionId: string;
+  buzzes: Array<{ playerId: PlayerId; buzzedAt: number }>;
+  timer: NodeJS.Timeout;
+}
+
 @WebSocketGateway({
   cors: AppConfig.corsOrigin ? { origin: AppConfig.corsOrigin } : false,
 })
 export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(BuzzerGateway.name);
+  private readonly buzzWindows = new Map<RoomCode, BuzzWindow>();
 
   constructor(
     @Inject(InMemoryRoomStore) private readonly store: InMemoryRoomStore,
@@ -93,7 +102,16 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
           this.handleBuzzerClose(client);
           return;
         case MessageType.Buzz:
-          this.handleBuzz(client, msg.questionId);
+          this.handleBuzz(client, msg.questionId, msg.buzzedAt);
+          return;
+        case MessageType.MarkCorrect:
+          this.handleMarkCorrect(client, msg.points ?? 100);
+          return;
+        case MessageType.MarkIncorrect:
+          this.handleMarkIncorrect(client);
+          return;
+        case MessageType.EndQuestion:
+          this.handleEndQuestion(client);
           return;
       }
     } catch (err) {
@@ -143,10 +161,12 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
     const binding = this.players.get(client.id);
     if (!binding) return;
     const { roomCode, playerId } = binding;
+    // Leave the socket.io room topic FIRST so the leaver doesn't receive
+    // their own promotion-cascade or player_left broadcasts.
+    void client.leave(roomCode);
     this.presence.onPlayerRemoved(roomCode, playerId);
     this.rooms.leaveRoom(roomCode, playerId);
     this.players.unbind(client.id);
-    void client.leave(roomCode);
     this.broadcast(roomCode, { type: MessageType.PlayerLeft, playerId });
   }
 
@@ -158,9 +178,11 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
     // Force-close an open buzzer before the role changes.
     if (room.buzzer.open) {
       this.store.closeBuzzer(binding.roomCode, BuzzerCloseReason.QuestionerChanged);
+      const roomAfter = this.store.getRoom(binding.roomCode)!;
       this.broadcast(binding.roomCode, {
         type: MessageType.BuzzerClosed,
         reason: BuzzerCloseReason.QuestionerChanged,
+        questionNumber: roomAfter.questionNumber,
       });
     }
 
@@ -184,6 +206,70 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
       type: MessageType.BuzzerOpened,
       questionId: opened.questionId,
       openedAt: opened.openedAt,
+      openAt: opened.openedAt + AppConfig.openDelayMs,
+      excludedPlayerIds: opened.excludedPlayerIds,
+    });
+  }
+
+  private handleMarkCorrect(client: Socket, points: number): void {
+    const binding = this.requireBinding(client);
+    const room = this.store.getRoom(binding.roomCode);
+    if (!room) throw new BuzzerError(ErrorCode.RoomNotFound, "room gone");
+    if (!isQuestioner(room, binding.playerId)) {
+      throw new BuzzerError(ErrorCode.NotAuthorized, "only questioner can judge");
+    }
+    const result = this.store.markCorrect(binding.roomCode, points);
+    if (!result) {
+      throw new BuzzerError(ErrorCode.BuzzerNotOpen, "no current winner to judge");
+    }
+    this.broadcast(binding.roomCode, {
+      type: MessageType.BuzzerClosed,
+      reason: BuzzerCloseReason.Correct,
+      winner: result.winner,
+      scores: result.scores,
+      questionNumber: result.questionNumber,
+    });
+  }
+
+  private handleMarkIncorrect(client: Socket): void {
+    const binding = this.requireBinding(client);
+    this.cancelBuzzWindow(binding.roomCode);
+    const room = this.store.getRoom(binding.roomCode);
+    if (!room) throw new BuzzerError(ErrorCode.RoomNotFound, "room gone");
+    if (!isQuestioner(room, binding.playerId)) {
+      throw new BuzzerError(ErrorCode.NotAuthorized, "only questioner can judge");
+    }
+    const result = this.store.markIncorrect(binding.roomCode);
+    if (!result) {
+      throw new BuzzerError(ErrorCode.BuzzerNotOpen, "no current winner to judge");
+    }
+    this.broadcast(binding.roomCode, {
+      type: MessageType.BuzzerClosed,
+      reason: BuzzerCloseReason.Incorrect,
+      winner: result.prevWinner,
+    });
+    this.broadcast(binding.roomCode, {
+      type: MessageType.BuzzerOpened,
+      questionId: result.questionId,
+      openedAt: result.openedAt,
+      openAt: result.openedAt + AppConfig.openDelayMs,
+      excludedPlayerIds: result.excludedPlayerIds,
+    });
+  }
+
+  private handleEndQuestion(client: Socket): void {
+    const binding = this.requireBinding(client);
+    this.cancelBuzzWindow(binding.roomCode);
+    const room = this.store.getRoom(binding.roomCode);
+    if (!room) throw new BuzzerError(ErrorCode.RoomNotFound, "room gone");
+    if (!isQuestioner(room, binding.playerId)) {
+      throw new BuzzerError(ErrorCode.NotAuthorized, "only questioner can end");
+    }
+    const nextQuestion = this.store.endQuestion(binding.roomCode);
+    this.broadcast(binding.roomCode, {
+      type: MessageType.BuzzerClosed,
+      reason: BuzzerCloseReason.Ended,
+      questionNumber: nextQuestion,
     });
   }
 
@@ -197,27 +283,86 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
     if (!room.buzzer.open) {
       throw new BuzzerError(ErrorCode.BuzzerNotOpen, "buzzer already closed");
     }
+    this.cancelBuzzWindow(binding.roomCode);
     this.store.closeBuzzer(binding.roomCode, BuzzerCloseReason.Manual);
+    const room2 = this.store.getRoom(binding.roomCode)!;
     this.broadcast(binding.roomCode, {
       type: MessageType.BuzzerClosed,
       reason: BuzzerCloseReason.Manual,
+      questionNumber: room2.questionNumber,
     });
   }
 
-  private handleBuzz(client: Socket, questionId: string): void {
+  private handleBuzz(client: Socket, questionId: string, buzzedAt: number): void {
     const binding = this.requireBinding(client);
     const room = this.store.getRoom(binding.roomCode);
-    if (!room) return; // silent — room is gone, no point responding
+    if (!room) return;
     if (!canBuzz(room, binding.playerId)) {
       throw new BuzzerError(ErrorCode.NotAuthorized, "questioner cannot buzz");
     }
-    const result = this.store.tryRegisterBuzz(binding.roomCode, binding.playerId, questionId);
-    if (!result) return; // race loser — silent drop
-    this.broadcast(binding.roomCode, {
+
+    const existing = this.buzzWindows.get(binding.roomCode);
+    if (existing && existing.questionId === questionId) {
+      // Window already open — add this buzz if the player isn't already in it
+      // and isn't excluded.
+      const excluded = room.buzzer.excludedPlayerIds ?? [];
+      if (
+        !excluded.includes(binding.playerId) &&
+        !existing.buzzes.some((b) => b.playerId === binding.playerId)
+      ) {
+        existing.buzzes.push({ playerId: binding.playerId, buzzedAt });
+      }
+      return;
+    }
+
+    // First buzz for this question — validate with store then open the window.
+    if (!this.store.acceptBuzz(binding.roomCode, binding.playerId, questionId)) return;
+
+    const timer = setTimeout(() => {
+      this.resolveBuzzWindow(binding.roomCode, questionId);
+    }, AppConfig.buzzWindowMs);
+
+    this.buzzWindows.set(binding.roomCode, {
+      questionId,
+      buzzes: [{ playerId: binding.playerId, buzzedAt }],
+      timer,
+    });
+  }
+
+  private resolveBuzzWindow(roomCode: RoomCode, questionId: string): void {
+    const w = this.buzzWindows.get(roomCode);
+    if (!w || w.questionId !== questionId) return;
+    this.buzzWindows.delete(roomCode);
+
+    const sorted = [...w.buzzes].sort((a, b) => a.buzzedAt - b.buzzedAt);
+    const winnerEntry = sorted[0];
+    if (!winnerEntry) return;
+
+    const buzzes: BuzzRecord[] = sorted.map((b) => ({
+      playerId: b.playerId,
+      deltaMs: Math.max(0, b.buzzedAt - winnerEntry.buzzedAt),
+    }));
+
+    const ok = this.store.finalizeWinner(roomCode, questionId, winnerEntry.playerId, buzzes);
+    if (!ok) return; // question changed while we were waiting
+
+    this.broadcast(roomCode, {
       type: MessageType.BuzzerClosed,
       reason: BuzzerCloseReason.Winner,
-      winner: result.winner,
+      winner: winnerEntry.playerId,
     });
+    this.broadcast(roomCode, {
+      type: MessageType.BuzzesReported,
+      buzzes,
+    });
+  }
+
+  private cancelBuzzWindow(roomCode: RoomCode): void {
+    const w = this.buzzWindows.get(roomCode);
+    if (w) {
+      clearTimeout(w.timer);
+      this.buzzWindows.delete(roomCode);
+    }
   }
 
   // --- helpers ---
