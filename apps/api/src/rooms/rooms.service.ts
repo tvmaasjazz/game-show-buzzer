@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type {
   ClientToken,
   Player,
@@ -19,7 +19,9 @@ export interface JoinResult {
 
 @Injectable()
 export class RoomsService {
-  constructor(private readonly store: InMemoryRoomStore) {}
+  constructor(
+    @Inject(InMemoryRoomStore) private readonly store: InMemoryRoomStore,
+  ) {}
 
   createRoom(clientToken: ClientToken, playerName: string): JoinResult {
     const name = this.validateName(playerName);
@@ -50,7 +52,8 @@ export class RoomsService {
     if (boundPlayerId) {
       const existing = room.players.find((p) => p.id === boundPlayerId);
       if (existing) {
-        this.store.updatePlayerConnected(roomCode, existing.id, true);
+        // Gateway calls PresenceService.onPlayerReconnect which flips `connected`
+        // and clears timers. Keep this method side-effect-free on reconnect.
         return { room, player: existing, isReconnect: true };
       }
       // Binding exists but player was removed (explicit Leave) — treat as new join.
