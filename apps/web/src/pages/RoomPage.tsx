@@ -141,17 +141,18 @@ export const RoomPage = () => {
             <span className="truncate text-sm text-gray-400">· {yourName}</span>
           )}
         </div>
-        <div className="relative z-50 flex items-center gap-2">
-          {!showDrawer && <AudioToggle />}
-          <button
-            onClick={() => setShowDrawer((v) => !v)}
-            aria-label={showDrawer ? "Close menu" : "Open menu"}
-            aria-expanded={showDrawer}
-            className="rounded-md bg-white/10 px-3 py-2 text-xl text-white transition-standard"
-          >
-            {showDrawer ? "✕" : "☰"}
-          </button>
-        </div>
+        {!showDrawer && (
+          <div className="flex items-center gap-2">
+            <AudioToggle />
+            <button
+              onClick={() => setShowDrawer(true)}
+              aria-label="Open menu"
+              className="rounded-md bg-white/10 px-3 py-2 text-xl text-white transition-standard"
+            >
+              ☰
+            </button>
+          </div>
+        )}
       </header>
 
       <QuestionLabel n={room.questionNumber} />

@@ -45,9 +45,18 @@ export const PlayerListDrawer = ({ room, you, onClose, onShare }: Props) => {
         className="flex h-full w-full max-w-sm flex-col border-l border-white/10 bg-neutral-950 text-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3 pr-16">
-          <span className="text-sm text-gray-500">Room</span>
-          <span className="text-lg tracking-widest text-white">{room.code}</span>
+        <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm text-gray-500">Room</span>
+            <span className="text-lg tracking-widest text-white">{room.code}</span>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            className="rounded-md bg-white/10 px-3 py-2 text-xl text-white transition-standard"
+          >
+            ✕
+          </button>
         </header>
 
         <div className="flex-1 overflow-y-auto">
