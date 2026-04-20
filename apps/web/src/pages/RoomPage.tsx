@@ -142,7 +142,7 @@ export const RoomPage = () => {
           )}
         </div>
         <div className="relative z-50 flex items-center gap-2">
-          <AudioToggle />
+          {!showDrawer && <AudioToggle />}
           <button
             onClick={() => setShowDrawer((v) => !v)}
             aria-label={showDrawer ? "Close menu" : "Open menu"}
