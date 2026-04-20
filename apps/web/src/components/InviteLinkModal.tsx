@@ -48,36 +48,39 @@ export const InviteLinkModal = ({ roomCode, onClose }: Props) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 md:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 md:items-center"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Invite friends"
-        className="w-full max-w-md rounded-xl bg-white p-6 text-black shadow-sm"
+        className="w-full max-w-md rounded-xl border border-white/10 bg-neutral-950 p-6 text-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl">Invite friends</h2>
-        <p className="mt-3 break-all rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-gray-400">
+          Room code <span className="tracking-widest text-white">{roomCode}</span>
+        </p>
+        <p className="mt-4 break-all rounded-md bg-white/5 px-3 py-2 text-sm text-gray-300">
           {url}
         </p>
         <div className="mt-4 flex flex-col gap-2">
           <button
             onClick={copy}
-            className="w-full rounded-md bg-green-500 px-4 py-3 text-white transition-standard"
+            className="w-full rounded-md bg-green-500 px-4 py-3 text-black transition-standard"
           >
             {copied ? "Copied!" : "Copy link"}
           </button>
           {copyError && (
-            <p className="text-xs text-red-500">
+            <p className="text-xs text-red-400">
               Couldn&apos;t copy — select the URL above.
             </p>
           )}
           {canShare && (
             <button
               onClick={share}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 text-black transition-standard"
+              className="w-full rounded-md bg-white/10 px-4 py-3 text-white transition-standard"
             >
               Share...
             </button>

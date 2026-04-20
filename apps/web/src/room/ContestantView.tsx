@@ -82,6 +82,26 @@ export const ContestantView = ({ room, you }: Props) => {
         >
           OUT
         </button>
+      ) : youWon && winnerPlayer ? (
+        <button
+          disabled
+          aria-disabled="true"
+          aria-label="You buzzed first"
+          className={`${baseBtn} flex items-center justify-center bg-green-500 text-black`}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="h-40 w-40"
+          >
+            <polyline points="5 12 10 17 19 8" />
+          </svg>
+        </button>
       ) : (
         <button
           disabled
