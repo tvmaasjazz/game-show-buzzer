@@ -67,6 +67,7 @@ export class RoomsService {
       connected: true,
       joinedAt: Date.now(),
       score: 0,
+      correctCount: 0,
     };
     this.store.addPlayer(roomCode, player);
     this.store.setBinding(roomCode, clientToken, playerId);

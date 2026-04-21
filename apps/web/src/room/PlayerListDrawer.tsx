@@ -73,7 +73,11 @@ export const PlayerListDrawer = ({ room, you, onClose, onShare }: Props) => {
             {[
               ...room.players.filter((p) => p.id === room.questionerId),
               ...[...room.players.filter((p) => p.id !== room.questionerId)].sort(
-                (a, b) => (b.score ?? 0) - (a.score ?? 0),
+                (a, b) => {
+                  const byScore = (b.score ?? 0) - (a.score ?? 0);
+                  if (byScore !== 0) return byScore;
+                  return (b.correctCount ?? 0) - (a.correctCount ?? 0);
+                },
               ),
             ].map((p) => {
               const isQ = p.id === room.questionerId;
@@ -109,6 +113,9 @@ export const PlayerListDrawer = ({ room, you, onClose, onShare }: Props) => {
                   {!isQ && room.questionNumber > 0 && (
                     <span className="text-sm tabular-nums text-gray-400">
                       {p.score ?? 0}
+                      <span className="ml-1 text-xs text-gray-500">
+                        ({p.correctCount ?? 0})
+                      </span>
                     </span>
                   )}
                 </li>

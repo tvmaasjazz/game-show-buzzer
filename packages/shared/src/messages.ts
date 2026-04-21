@@ -65,6 +65,11 @@ export interface PingMessage {
   clientTime: number;
 }
 
+export interface ToggleBlockMessage {
+  type: MessageType.ToggleBlock;
+  playerId: PlayerId;
+}
+
 export type ClientMessage =
   | CreateRoomMessage
   | JoinRoomMessage
@@ -76,7 +81,8 @@ export type ClientMessage =
   | MarkCorrectMessage
   | MarkIncorrectMessage
   | EndQuestionMessage
-  | PingMessage;
+  | PingMessage
+  | ToggleBlockMessage;
 
 // --- Server -> Client ---
 
@@ -123,6 +129,12 @@ export interface BuzzerOpenedMessage {
   // Absolute server timestamp when clients should enable their buzz button.
   openAt: number;
   excludedPlayerIds?: PlayerId[];
+  blockedPlayerIds?: PlayerId[];
+}
+
+export interface BlockedChangedMessage {
+  type: MessageType.BlockedChanged;
+  blockedPlayerIds: PlayerId[];
 }
 
 export interface BuzzerClosedMessage {
@@ -164,4 +176,5 @@ export type ServerMessage =
   | BuzzerClosedMessage
   | BuzzesReportedMessage
   | ErrorMessage
-  | PongMessage;
+  | PongMessage
+  | BlockedChangedMessage;

@@ -8,6 +8,7 @@ export interface Player {
   connected: boolean;
   joinedAt: number;
   score?: number;
+  correctCount?: number;
 }
 
 // BuzzerState state machine:
@@ -44,6 +45,9 @@ export interface BuzzerState {
   // Players the questioner has judged Incorrect this session. They can't buzz
   // on subsequent re-opens until the session ends (Correct/Ended/fresh Open).
   excludedPlayerIds?: PlayerId[];
+  // Players the questioner has manually blocked this question. Resets when a
+  // new question starts. Toggleable by the questioner at any time.
+  blockedPlayerIds?: PlayerId[];
 }
 
 export interface Room {

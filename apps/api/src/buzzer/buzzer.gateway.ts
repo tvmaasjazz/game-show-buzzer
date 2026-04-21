@@ -113,6 +113,9 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
         case MessageType.EndQuestion:
           this.handleEndQuestion(client);
           return;
+        case MessageType.ToggleBlock:
+          this.handleToggleBlock(client, msg.playerId);
+          return;
         case MessageType.Ping:
           this.sendTo(client, {
             type: MessageType.Pong,
@@ -215,6 +218,27 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
       openedAt: opened.openedAt,
       openAt: opened.openedAt + AppConfig.openDelayMs,
       excludedPlayerIds: opened.excludedPlayerIds,
+      blockedPlayerIds: opened.blockedPlayerIds,
+    });
+  }
+
+  private handleToggleBlock(client: Socket, targetId: string): void {
+    const binding = this.requireBinding(client);
+    const room = this.store.getRoom(binding.roomCode);
+    if (!room) throw new BuzzerError(ErrorCode.RoomNotFound, "room gone");
+    if (!isQuestioner(room, binding.playerId)) {
+      throw new BuzzerError(ErrorCode.NotAuthorized, "only questioner can block players");
+    }
+    if (targetId === binding.playerId) {
+      throw new BuzzerError(ErrorCode.InvalidTarget, "cannot block yourself");
+    }
+    const next = this.store.toggleBlock(binding.roomCode, targetId);
+    if (next === null) {
+      throw new BuzzerError(ErrorCode.InvalidTarget, "cannot block questioner");
+    }
+    this.broadcast(binding.roomCode, {
+      type: MessageType.BlockedChanged,
+      blockedPlayerIds: next,
     });
   }
 
@@ -261,6 +285,7 @@ export class BuzzerGateway implements OnGatewayInit, OnGatewayDisconnect {
       openedAt: result.openedAt,
       openAt: result.openedAt + AppConfig.openDelayMs,
       excludedPlayerIds: result.excludedPlayerIds,
+      blockedPlayerIds: result.blockedPlayerIds,
     });
   }
 

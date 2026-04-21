@@ -38,7 +38,9 @@ export const ContestantView = ({ room, you }: Props) => {
     : null;
   const youWon = buzzer.winner === you;
   const youExcluded = !!buzzer.excludedPlayerIds?.includes(you);
-  const youCanBuzz = buzzerLive && !youExcluded;
+  const youBlocked = !!buzzer.blockedPlayerIds?.includes(you);
+  const youLocked = youExcluded || youBlocked;
+  const youCanBuzz = buzzerLive && !youLocked;
 
   // Flash +N when our own score jumps.
   const yourScore = room.players.find((p) => p.id === you)?.score ?? 0;
@@ -55,13 +57,19 @@ export const ContestantView = ({ room, you }: Props) => {
     prevScoreRef.current = yourScore;
   }, [yourScore]);
 
-  // Flash "INCORRECT" when we transition from not-excluded to excluded.
+  // Flash "INCORRECT" only when we transition from not-excluded to excluded
+  // AND we were the most recent winner (not a manual block).
   const prevExcludedRef = useRef<boolean>(youExcluded);
+  const wasRecentWinnerRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (buzzer.winner === you) wasRecentWinnerRef.current = true;
+  }, [buzzer.winner, you]);
   const [justIncorrect, setJustIncorrect] = useState(false);
   useEffect(() => {
     const wasExcluded = prevExcludedRef.current;
     prevExcludedRef.current = youExcluded;
-    if (!wasExcluded && youExcluded) {
+    if (!wasExcluded && youExcluded && wasRecentWinnerRef.current) {
+      wasRecentWinnerRef.current = false;
       setJustIncorrect(true);
       const t = window.setTimeout(() => setJustIncorrect(false), 3500);
       return () => window.clearTimeout(t);
@@ -70,7 +78,7 @@ export const ContestantView = ({ room, you }: Props) => {
   }, [youExcluded]);
 
   const subtitle: React.ReactNode = buzzer.open
-    ? youExcluded
+    ? youLocked
       ? justIncorrect
         ? (
           <>
@@ -78,7 +86,9 @@ export const ContestantView = ({ room, you }: Props) => {
             You&apos;re out this round.
           </>
         )
-        : "You're out this round"
+        : youBlocked
+          ? "Blocked by the questioner"
+          : "You're out this round"
       : "Buzzer OPEN — tap now"
     : winnerPlayer
       ? youWon
@@ -119,11 +129,11 @@ export const ContestantView = ({ room, you }: Props) => {
         >
           BUZZ
         </button>
-      ) : buzzer.open && youExcluded ? (
+      ) : buzzer.open && youLocked ? (
         <button
           disabled
           aria-disabled="true"
-          aria-label="Buzzer (excluded)"
+          aria-label={youBlocked ? "Buzzer (blocked)" : "Buzzer (excluded)"}
           className={`${baseBtn} bg-gray-300 text-gray-500`}
         >
           OUT

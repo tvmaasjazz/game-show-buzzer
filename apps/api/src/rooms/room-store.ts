@@ -31,8 +31,11 @@ export interface RoomStore {
     questionId: string;
     openedAt: number;
     excludedPlayerIds: PlayerId[];
+    blockedPlayerIds: PlayerId[];
   } | null;
   closeBuzzer(code: RoomCode, _reason: BuzzerCloseReason): void;
+  // Toggle a player in the buzzer's manual block list. Returns the new list.
+  toggleBlock(code: RoomCode, playerId: PlayerId): PlayerId[] | null;
   // Returns true if the buzz is valid (buzzer open, correct questionId, not excluded).
   // Does not mutate winner state — call finalizeWinner after the collection window.
   acceptBuzz(code: RoomCode, playerId: PlayerId, questionId: string): boolean;
@@ -51,6 +54,7 @@ export interface RoomStore {
     questionId: string;
     openedAt: number;
     excludedPlayerIds: PlayerId[];
+    blockedPlayerIds: PlayerId[];
   } | null;
   endQuestion(code: RoomCode): number;
 
@@ -81,6 +85,7 @@ export class InMemoryRoomStore implements RoomStore {
       connected: true,
       joinedAt: now,
       score: 0,
+      correctCount: 0,
     };
     const room: Room = {
       code,
@@ -149,12 +154,16 @@ export class InMemoryRoomStore implements RoomStore {
     questionId: string;
     openedAt: number;
     excludedPlayerIds: PlayerId[];
+    blockedPlayerIds: PlayerId[];
   } | null {
     const room = this.rooms.get(code);
     if (!room) return null;
     const questionId = randomUUID();
     const openedAt = Date.now();
-    // Fresh OPEN — everything reset. questionNumber already reflects current question.
+    // Carry forward any blocks the questioner set during setup — those reset
+    // only when the previous question ends (closeBuzzer/markCorrect/etc.
+    // already wipe buzzer state), not on OPEN itself.
+    const blockedPlayerIds = room.buzzer.blockedPlayerIds ?? [];
     room.buzzer = {
       open: true,
       questionId,
@@ -163,8 +172,21 @@ export class InMemoryRoomStore implements RoomStore {
       winnerAt: undefined,
       buzzes: [],
       excludedPlayerIds: [],
+      blockedPlayerIds,
     };
-    return { questionId, openedAt, excludedPlayerIds: [] };
+    return { questionId, openedAt, excludedPlayerIds: [], blockedPlayerIds };
+  }
+
+  toggleBlock(code: RoomCode, playerId: PlayerId): PlayerId[] | null {
+    const room = this.rooms.get(code);
+    if (!room) return null;
+    if (room.questionerId === playerId) return null;
+    const current = room.buzzer.blockedPlayerIds ?? [];
+    const next = current.includes(playerId)
+      ? current.filter((id) => id !== playerId)
+      : [...current, playerId];
+    room.buzzer = { ...room.buzzer, blockedPlayerIds: next };
+    return next;
   }
 
   closeBuzzer(code: RoomCode, _reason: BuzzerCloseReason): void {
@@ -182,7 +204,10 @@ export class InMemoryRoomStore implements RoomStore {
     if (!b.winner) return null;
     const winner = b.winner;
     const winnerPlayer = room.players.find((p) => p.id === winner);
-    if (winnerPlayer) winnerPlayer.score = (winnerPlayer.score ?? 0) + points;
+    if (winnerPlayer) {
+      winnerPlayer.score = (winnerPlayer.score ?? 0) + points;
+      winnerPlayer.correctCount = (winnerPlayer.correctCount ?? 0) + 1;
+    }
     room.buzzer = { open: false };
     room.questionNumber += 1;
     const scores: Record<PlayerId, number> = Object.fromEntries(
@@ -196,6 +221,7 @@ export class InMemoryRoomStore implements RoomStore {
     questionId: string;
     openedAt: number;
     excludedPlayerIds: PlayerId[];
+    blockedPlayerIds: PlayerId[];
   } | null {
     const room = this.rooms.get(code);
     if (!room) return null;
@@ -207,6 +233,7 @@ export class InMemoryRoomStore implements RoomStore {
       ...(b.excludedPlayerIds ?? []),
       prevWinner,
     ];
+    const blockedPlayerIds = b.blockedPlayerIds ?? [];
     const questionId = randomUUID();
     const openedAt = Date.now();
     room.buzzer = {
@@ -217,8 +244,9 @@ export class InMemoryRoomStore implements RoomStore {
       winnerAt: undefined,
       buzzes: [],
       excludedPlayerIds,
+      blockedPlayerIds,
     };
-    return { prevWinner, questionId, openedAt, excludedPlayerIds };
+    return { prevWinner, questionId, openedAt, excludedPlayerIds, blockedPlayerIds };
   }
 
   endQuestion(code: RoomCode): number {
@@ -236,6 +264,7 @@ export class InMemoryRoomStore implements RoomStore {
     if (!b.open) return false;
     if (b.questionId !== questionId) return false;
     if (b.excludedPlayerIds?.includes(playerId)) return false;
+    if (b.blockedPlayerIds?.includes(playerId)) return false;
     return true;
   }
 
@@ -258,6 +287,7 @@ export class InMemoryRoomStore implements RoomStore {
       winnerAt: Date.now(),
       buzzes,
       excludedPlayerIds: b.excludedPlayerIds,
+      blockedPlayerIds: b.blockedPlayerIds,
     };
     return true;
   }

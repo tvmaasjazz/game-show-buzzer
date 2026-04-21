@@ -48,6 +48,7 @@ interface RoomStoreValue {
   markIncorrect: () => void;
   endQuestion: () => void;
   changeQuestioner: (id: PlayerId) => void;
+  toggleBlock: (id: PlayerId) => void;
   dismissToast: (id: number) => void;
   clearError: () => void;
   resetRoom: () => void;
@@ -159,8 +160,12 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
             winnerAt: undefined,
             buzzes: [],
             excludedPlayerIds: msg.excludedPlayerIds ?? [],
+            blockedPlayerIds: msg.blockedPlayerIds ?? [],
           });
           playOpen();
+          return;
+        case MessageType.BlockedChanged:
+          setBuzzer({ blockedPlayerIds: msg.blockedPlayerIds });
           return;
         case MessageType.BuzzerClosed: {
           const amQuestioner = room?.questionerId === you;
@@ -176,12 +181,14 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
                 ? {
                     ...prev,
                     questionNumber: msg.questionNumber ?? prev.questionNumber,
-                    players: msg.scores
-                      ? prev.players.map((p) => ({
-                          ...p,
-                          score: msg.scores![p.id] ?? p.score ?? 0,
-                        }))
-                      : prev.players,
+                    players: prev.players.map((p) => ({
+                      ...p,
+                      score: msg.scores ? msg.scores[p.id] ?? p.score ?? 0 : p.score,
+                      correctCount:
+                        p.id === msg.winner
+                          ? (p.correctCount ?? 0) + 1
+                          : p.correctCount,
+                    })),
                     buzzer: { open: false },
                   }
                 : prev,
@@ -304,6 +311,12 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
     [socket],
   );
 
+  const toggleBlock = useCallback(
+    (id: PlayerId) =>
+      socket.send({ type: MessageType.ToggleBlock, playerId: id }),
+    [socket],
+  );
+
   const clearError = useCallback(() => setLastError(null), []);
 
   const resetRoom = useCallback(() => {
@@ -331,6 +344,7 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
       markIncorrect,
       endQuestion,
       changeQuestioner,
+      toggleBlock,
       dismissToast,
       clearError,
       resetRoom,
@@ -352,6 +366,7 @@ export const RoomStoreProvider = ({ children }: { children: ReactNode }) => {
       markIncorrect,
       endQuestion,
       changeQuestioner,
+      toggleBlock,
       dismissToast,
       clearError,
       resetRoom,

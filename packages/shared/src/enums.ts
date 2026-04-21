@@ -43,4 +43,6 @@ export enum MessageType {
   Error = "error",
   Ping = "ping",
   Pong = "pong",
+  ToggleBlock = "toggle_block",
+  BlockedChanged = "blocked_changed",
 }
