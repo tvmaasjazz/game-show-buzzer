@@ -40,22 +40,27 @@ export const QuestionerView = ({ room, you }: Props) => {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      <div className="flex gap-2">
-        {POINT_VALUES.map((v) => (
-          <button
-            key={v}
-            onClick={() => setPoints(v)}
-            disabled={questionStarted}
-            aria-pressed={points === v}
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition-standard disabled:opacity-40 ${
-              points === v
-                ? "bg-white text-black"
-                : "bg-white/10 text-white"
-            }`}
-          >
-            {v}
-          </button>
-        ))}
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-sm text-gray-400">
+          How many points is the question worth?
+        </p>
+        <div className="flex gap-2">
+          {POINT_VALUES.map((v) => (
+            <button
+              key={v}
+              onClick={() => setPoints(v)}
+              disabled={questionStarted}
+              aria-pressed={points === v}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-standard disabled:opacity-40 ${
+                points === v
+                  ? "bg-white text-black"
+                  : "bg-white/10 text-white"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
       <p
         role="status"

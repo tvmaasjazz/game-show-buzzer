@@ -63,9 +63,6 @@ export const HomePage = () => {
         >
           Join Room
         </Link>
-        <p className="mt-3 text-center text-sm text-gray-500">
-          Tap-to-buzz for friend group trivia.
-        </p>
       </div>
     </main>
   );

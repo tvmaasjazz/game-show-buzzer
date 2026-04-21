@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlayerId, Room } from "@buzzer/shared";
 import { useAudio } from "../hooks/useAudioSettings";
 import { serverNow } from "../hooks/useClockSync";
@@ -40,9 +40,45 @@ export const ContestantView = ({ room, you }: Props) => {
   const youExcluded = !!buzzer.excludedPlayerIds?.includes(you);
   const youCanBuzz = buzzerLive && !youExcluded;
 
-  const subtitle = buzzer.open
+  // Flash +N when our own score jumps.
+  const yourScore = room.players.find((p) => p.id === you)?.score ?? 0;
+  const prevScoreRef = useRef(yourScore);
+  const [pointsFlash, setPointsFlash] = useState<number | null>(null);
+  useEffect(() => {
+    if (yourScore > prevScoreRef.current) {
+      const delta = yourScore - prevScoreRef.current;
+      setPointsFlash(delta);
+      const t = window.setTimeout(() => setPointsFlash(null), 2500);
+      prevScoreRef.current = yourScore;
+      return () => window.clearTimeout(t);
+    }
+    prevScoreRef.current = yourScore;
+  }, [yourScore]);
+
+  // Flash "INCORRECT" when we transition from not-excluded to excluded.
+  const prevExcludedRef = useRef<boolean>(youExcluded);
+  const [justIncorrect, setJustIncorrect] = useState(false);
+  useEffect(() => {
+    const wasExcluded = prevExcludedRef.current;
+    prevExcludedRef.current = youExcluded;
+    if (!wasExcluded && youExcluded) {
+      setJustIncorrect(true);
+      const t = window.setTimeout(() => setJustIncorrect(false), 3500);
+      return () => window.clearTimeout(t);
+    }
+    if (!youExcluded) setJustIncorrect(false);
+  }, [youExcluded]);
+
+  const subtitle: React.ReactNode = buzzer.open
     ? youExcluded
-      ? "You're out this round"
+      ? justIncorrect
+        ? (
+          <>
+            <span className="text-red-500">INCORRECT.</span>{" "}
+            You&apos;re out this round.
+          </>
+        )
+        : "You're out this round"
       : "Buzzer OPEN — tap now"
     : winnerPlayer
       ? youWon
@@ -54,13 +90,23 @@ export const ContestantView = ({ room, you }: Props) => {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      <p
-        role="status"
-        aria-live="polite"
-        className={`text-lg ${youWon && !buzzer.open ? "text-green-500" : "text-gray-500"}`}
-      >
-        {subtitle}
-      </p>
+      <div className="relative flex items-center">
+        <p
+          role="status"
+          aria-live="polite"
+          className={`text-lg ${youWon && !buzzer.open ? "text-green-500" : "text-gray-500"}`}
+        >
+          {subtitle}
+        </p>
+        {pointsFlash !== null && (
+          <span
+            aria-live="polite"
+            className="pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 animate-bounce whitespace-nowrap text-3xl font-bold text-green-400"
+          >
+            +{pointsFlash}
+          </span>
+        )}
+      </div>
       {youCanBuzz ? (
         <button
           onClick={() => {
@@ -86,21 +132,10 @@ export const ContestantView = ({ room, you }: Props) => {
         <button
           disabled
           aria-disabled="true"
-          aria-label="You buzzed first"
-          className={`${baseBtn} flex items-center justify-center bg-green-500 text-black`}
+          aria-label="You buzzed first — answer now"
+          className={`${baseBtn} animate-pulse bg-yellow-300 text-black shadow-[0_0_60px_rgba(253,224,71,0.7)]`}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            className="h-40 w-40"
-          >
-            <polyline points="5 12 10 17 19 8" />
-          </svg>
+          The answer is...
         </button>
       ) : (
         <button

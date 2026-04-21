@@ -12,7 +12,7 @@ import { ContestantView } from "../room/ContestantView";
 import { PlayerListDrawer } from "../room/PlayerListDrawer";
 
 const QuestionLabel = ({ n }: { n: number }) => (
-  <p className="mb-4 text-center text-xs uppercase tracking-wide text-gray-500">
+  <p className="mb-4 text-center text-base uppercase tracking-widest text-gray-400">
     Question {n}
   </p>
 );
