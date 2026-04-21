@@ -1,8 +1,14 @@
 const ONE_MINUTE_MS = 60 * 1000;
 
+const parseCorsOrigin = (raw: string | undefined): string | string[] | false => {
+  if (!raw) return false;
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length > 1 ? list : (list[0] ?? false);
+};
+
 export const AppConfig = {
   port: parseInt(process.env.PORT ?? "3000", 10),
-  corsOrigin: process.env.CORS_ORIGIN ?? false,
+  corsOrigin: parseCorsOrigin(process.env.CORS_ORIGIN),
   roleIdleMs: 2 * ONE_MINUTE_MS,
   roomDeathMs: 5 * ONE_MINUTE_MS,
   roomGcSweepMs: 5 * ONE_MINUTE_MS,
